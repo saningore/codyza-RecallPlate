@@ -1,7 +1,7 @@
 import Link from "next/link";
 import StatusMark from "@/components/StatusMark";
 import type { FdaRecord, FsisRecord } from "@/lib/types";
-import { classDefinition, displayStatus, officialFdaUrl, show, shownDate } from "@/lib/text";
+import { classDefinition, displayStatus, enforcementReportUrl, show, shownDate } from "@/lib/text";
 
 export function FdaCard({ record, query }: { record: FdaRecord; query: string }) {
   const href = record.recallNumber
@@ -24,7 +24,7 @@ export function FdaCard({ record, query }: { record: FdaRecord; query: string })
       <p className="mt-3 line-clamp-4 break-words">{show(record.reason)}</p>
       <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
         {href ? <Link className="inline-flex min-h-11 items-center font-bold text-sea underline" href={href} aria-label={`Full FDA record for ${record.recallNumber ?? record.productDescription ?? "this product"}`}>Full record</Link> : null}
-        {record.recallNumber ? <a className="inline-flex min-h-11 items-center font-bold text-sea underline" href={officialFdaUrl(record.recallNumber)} target="_blank" rel="noopener noreferrer" aria-label={`openFDA record for ${record.recallNumber}, opens in a new tab`}>openFDA record</a> : null}
+        {record.recallNumber ? <a className="inline-flex min-h-11 items-center font-bold text-sea underline" href={enforcementReportUrl(record.recallNumber)} target="_blank" rel="noopener noreferrer" aria-label={`FDA Enforcement Report for ${record.recallNumber}, opens in a new tab`}>FDA Enforcement Report</a> : null}
       </div>
     </article>
   );

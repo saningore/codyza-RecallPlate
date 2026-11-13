@@ -8,7 +8,7 @@ import { COMPARE_NOTE, ENFORCEMENT_ABOUT, EXTRACT_NOTE, OPENFDA_ABOUT, failureDe
 import { fdaFacts } from "@/lib/facts";
 import { fdaByEvent, fdaByNumber } from "@/lib/openfda";
 import { isFdaNumber } from "@/lib/query";
-import { classDefinition, displayStatus, enforcementReportUrl, formatCalendarDate, formatTimestamp, officialFdaUrl } from "@/lib/text";
+import { classDefinition, displayStatus, enforcementReportUrl, formatCalendarDate, formatTimestamp } from "@/lib/text";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "FDA recall record" };
@@ -49,7 +49,7 @@ export default async function FdaRecallPage({
       <article className="mx-auto max-w-3xl px-4 py-12">
         <h1 className="font-serif text-4xl font-semibold">This recall number was not returned</h1>
         <p className="mt-3">The FDA enforcement catalog did not return {recallNumber}.</p>
-        <a className="mt-4 inline-flex min-h-11 items-center font-bold text-sea underline" href={officialFdaUrl(recallNumber)}>openFDA query for this recall number</a>
+        <a className="mt-4 inline-flex min-h-11 items-center font-bold text-sea underline" href={enforcementReportUrl(recallNumber)}>FDA Enforcement Report for this recall number</a>
         <Link className="mt-6 inline-flex font-bold text-sea underline" href={back}>Back to search</Link>
       </article>
     );
@@ -77,7 +77,6 @@ export default async function FdaRecallPage({
         </section>
       ))}
       <div className="mt-8 flex flex-col gap-3">
-        <a className="font-bold text-sea underline" href={officialFdaUrl(recallNumber)}>openFDA record for this recall number</a>
         <a className="font-bold text-sea underline" href={enforcementReportUrl(recallNumber)}>FDA Enforcement Report for this recall number</a>
         <a className="font-bold text-sea underline" href={OPENFDA_ABOUT}>openFDA food enforcement documentation</a>
         <a className="font-bold text-sea underline" href={ENFORCEMENT_ABOUT}>FDA Enforcement Reports</a>

@@ -229,13 +229,6 @@ export function suggestToken(query: string, descriptions: string[]): string | nu
   return best;
 }
 
-export function officialFdaUrl(recallNumber: string): string {
-  const url = new URL("https://api.fda.gov/food/enforcement.json");
-  url.searchParams.set("search", `recall_number:"${recallNumber}"`);
-  url.searchParams.set("limit", "1");
-  return url.toString();
-}
-
 export function enforcementReportUrl(recallNumber: string): string {
   const url = new URL("https://www.accessdata.fda.gov/scripts/ires/index.cfm");
   url.searchParams.set("Product", recallNumber);

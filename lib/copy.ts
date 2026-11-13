@@ -57,6 +57,7 @@ export const FIXTURE_REFUSAL = "Refusing to start. RECALLPLATE_USE_FIXTURES serv
 
 export const FDA_ENFORCEMENT = "https://api.fda.gov/food/enforcement.json";
 export const FDA_NOTICES = "https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/food-safety-recalls/rss.xml";
+export const FDA_RECALLS = "https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts";
 export const FSIS_ENDPOINT = "https://www.fsis.usda.gov/fsis/api/recall/v/1";
 export const OPENFDA_ABOUT = "https://open.fda.gov/apis/food/enforcement/";
 export const ENFORCEMENT_ABOUT = "https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts/enforcement-reports";

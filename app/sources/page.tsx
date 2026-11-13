@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CDC_OUTBREAKS, ENFORCEMENT_ABOUT, FDA_NOTICES, FDA_OUTBREAKS, FOODSAFETY_GOV, FSIS_ENDPOINT, FSIS_HOME, OPENFDA_ABOUT } from "@/lib/copy";
+import { CDC_OUTBREAKS, ENFORCEMENT_ABOUT, FDA_OUTBREAKS, FDA_RECALLS, FOODSAFETY_GOV, FSIS_HOME, OPENFDA_ABOUT } from "@/lib/copy";
 
 export const metadata: Metadata = { title: "Sources" };
 
@@ -12,19 +12,19 @@ const SOURCES = [
   },
   {
     name: "FDA food safety recalls feed",
-    href: FDA_NOTICES,
+    href: FDA_RECALLS,
     use: "Recently posted notices come from FDA’s food safety recalls RSS feed. Each item keeps the title, link, date, and description FDA published.",
     limit: "A notice can appear before the weekly enforcement extract includes it. The feed does not include every enforcement row. RecallPlate does not assign a class to a notice.",
   },
   {
     name: "FDA Enforcement Reports",
     href: ENFORCEMENT_ABOUT,
-    use: "A recall number links to the FDA Enforcement Report page for that product number, and to the openFDA query that returns the same number.",
+    use: "A recall number links to the FDA Enforcement Report page for that product number. That page is the classified catalog, not the openFDA data file.",
     limit: "The enforcement report is the classified catalog. Press notices and enforcement rows are different publications.",
   },
   {
     name: "USDA FSIS Recall API",
-    href: FSIS_ENDPOINT,
+    href: FSIS_HOME,
     use: "Meat, poultry, and processed egg products come from the FSIS recall API. RecallPlate downloads that public list and filters it. Public health alerts stay in their own group. Active and closed stay in the words FSIS sent.",
     limit: "If FSIS cannot be reached, the page says USDA was not checked and does not add a recall in its place. A list already retrieved can be reused for 15 minutes. Distribution is the state list FSIS returned. It is not drawn as a map.",
   },

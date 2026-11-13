@@ -43,8 +43,10 @@ test.describe("RecallPlate in the browser", () => {
     await expect(card.getByText(/Class I|Class II|Class III|Not Yet Classified|Class not included/)).toBeVisible();
     await card.getByRole("link", { name: "Full record" }).click();
     await expect(page).toHaveURL(/\/recalls\/fda\//);
-    await expect(page.getByRole("link", { name: "openFDA record for this recall number" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "FDA Enforcement Report for this recall number" })).toBeVisible();
+    const report = page.getByRole("link", { name: "FDA Enforcement Report for this recall number" });
+    await expect(report).toBeVisible();
+    await expect(report).toHaveAttribute("href", /https:\/\/www\.accessdata\.fda\.gov\/scripts\/ires\/index\.cfm\?Product=/);
+    await expect(page.locator("a[href*='api.fda.gov']")).toHaveCount(0);
     await expect(page.getByText("Not included in this record").first()).toBeVisible();
     await expect(page.getByRole("link", { name: "Codyza" })).toBeVisible();
   });
