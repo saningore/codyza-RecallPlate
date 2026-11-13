@@ -13,6 +13,34 @@ export const NO_GUARANTEE = "A search with no matching records does not mean a p
 export const FDA_UNCHECKED = "The FDA enforcement catalog could not be checked. No recall was added in its place.";
 export const FSIS_UNCHECKED = "USDA FSIS could not be checked. No USDA recall was added in its place.";
 export const NOTICE_UNCHECKED = "The FDA notice feed could not be checked. No notice was added in its place.";
+export const FDA_TIMEOUT = "The FDA enforcement catalog did not respond in time. No recall was added in its place.";
+export const FSIS_TIMEOUT = "USDA FSIS did not respond in time. No USDA recall was added in its place.";
+export const NOTICE_TIMEOUT = "The FDA notice feed did not respond in time. No notice was added in its place.";
+export const FDA_UNREADABLE = "The FDA enforcement catalog responded in a form RecallPlate could not read. No recall was added in its place.";
+export const FSIS_UNREADABLE = "USDA FSIS responded in a form RecallPlate could not read. No USDA recall was added in its place.";
+export const NOTICE_UNREADABLE = "The FDA notice feed responded in a form RecallPlate could not read. No notice was added in its place.";
+export const SEARCH_FAILED = "Recall records could not be loaded. Try again in a few minutes.";
+export const SEARCH_TIMEOUT = "The search timed out before FDA and USDA could answer. No record was added in its place.";
+export const SEARCH_UNREADABLE = "The search response could not be read. No record was added in its place.";
+export const GAP_NOTE = "Nothing was added to fill this gap. A failed check is not a finding that a food is safe.";
+export const STILL_CHECKING = "Still waiting on the official sources. A source that does not answer is left blank.";
+
+const FAILURE_DETAIL = {
+  fda: { timeout: FDA_TIMEOUT, unavailable: FDA_UNCHECKED, unreadable: FDA_UNREADABLE },
+  fsis: { timeout: FSIS_TIMEOUT, unavailable: FSIS_UNCHECKED, unreadable: FSIS_UNREADABLE },
+  notice: { timeout: NOTICE_TIMEOUT, unavailable: NOTICE_UNCHECKED, unreadable: NOTICE_UNREADABLE },
+} as const;
+
+export function failureDetail(source: keyof typeof FAILURE_DETAIL, failure: keyof (typeof FAILURE_DETAIL)["fda"]): string {
+  return FAILURE_DETAIL[source][failure];
+}
+
+export function failureTitle(source: keyof typeof FAILURE_DETAIL, failure: keyof (typeof FAILURE_DETAIL)["fda"]): string {
+  const name = source === "fda" ? "FDA" : source === "fsis" ? "USDA FSIS" : "The FDA notice feed";
+  if (failure === "timeout") return `${name} did not respond in time`;
+  if (failure === "unreadable") return `${name} responded in an unexpected form`;
+  return `${name} could not be checked`;
+}
 export const FDA_EMPTY = "No matching FDA enforcement records were found.";
 export const FSIS_EMPTY = "No matching USDA FSIS records were found.";
 export const NOTICE_EMPTY = "No matching FDA notices were found.";

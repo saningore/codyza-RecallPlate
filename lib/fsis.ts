@@ -1,17 +1,37 @@
-import { FSIS_ENDPOINT, FSIS_UNCHECKED, FSIS_USER_AGENT, PAGE_SIZE } from "@/lib/copy";
+import { FSIS_ENDPOINT, FSIS_USER_AGENT, PAGE_SIZE, failureDetail } from "@/lib/copy";
 import { fetchUpstream } from "@/lib/http";
 import { parseRecallNumber } from "@/lib/query";
-import type { FsisRecord, FsisSection, RecentReport, SearchInput } from "@/lib/types";
-import { calendarDate, clean, fsisGroup, fsisUrl, matchesClass, plain, withinDates } from "@/lib/text";
+import type { FsisRecord, FsisSection, RecentReport, SearchInput, SourceFailure } from "@/lib/types";
+import { calendarDate, clean, failureKind, fsisGroup, fsisUrl, matchesClass, plain, withinDates } from "@/lib/text";
 
-function rowsFrom(body: unknown): unknown[] {
+const FSIS_LIST_KEYS = ["results", "data", "recalls", "items"] as const;
+
+function rowsFrom(body: unknown): unknown[] | null {
   if (Array.isArray(body)) return body;
-  if (!body || typeof body !== "object") return [];
+  if (!body || typeof body !== "object") return null;
   const record = body as Record<string, unknown>;
-  for (const key of ["results", "data", "recalls", "items"]) {
-    if (Array.isArray(record[key])) return record[key] as unknown[];
+  for (const key of FSIS_LIST_KEYS) {
+    if (key in record) return Array.isArray(record[key]) ? record[key] as unknown[] : null;
   }
-  return [];
+  return null;
+}
+
+export function fsisReadable(record: FsisRecord): boolean {
+  return Boolean(record.recallNumber || record.title || record.products || record.summary);
+}
+
+export function interpretFsisCatalog(bodyText: string): { ok: true; records: FsisRecord[] } | { ok: false } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText) as unknown;
+  } catch {
+    return { ok: false };
+  }
+  const rows = rowsFrom(parsed);
+  if (!rows) return { ok: false };
+  const records = rows.map(normalizeFsis).filter((row): row is FsisRecord => Boolean(row && fsisReadable(row)));
+  if (rows.length > 0 && records.length === 0) return { ok: false };
+  return { ok: true, records };
 }
 
 export function normalizeFsis(value: unknown): FsisRecord | null {
@@ -114,30 +134,27 @@ const FSIS_HEADERS = {
 
 let catalogCache: { at: number; records: FsisRecord[] } | null = null;
 
-async function loadRecords(): Promise<FsisRecord[] | null> {
-  if (catalogCache && Date.now() - catalogCache.at < 15 * 60_000) return catalogCache.records;
-  const response = await fetchUpstream(FSIS_ENDPOINT, 60_000, FSIS_HEADERS);
-  if (response.status !== 200) return catalogCache?.records ?? null;
-  let rows: unknown[] = [];
+async function loadRecords(): Promise<{ records: FsisRecord[] } | { failure: SourceFailure }> {
+  if (catalogCache && Date.now() - catalogCache.at < 15 * 60_000) return { records: catalogCache.records };
   try {
-    rows = rowsFrom(JSON.parse(response.bodyText) as unknown);
-  } catch {
-    return catalogCache?.records ?? null;
+    const response = await fetchUpstream(FSIS_ENDPOINT, 60_000, FSIS_HEADERS);
+    if (response.status !== 200) return catalogCache ? { records: catalogCache.records } : { failure: "unavailable" };
+    const read = interpretFsisCatalog(response.bodyText);
+    if (!read.ok || !read.records.length) return catalogCache ? { records: catalogCache.records } : { failure: "unreadable" };
+    const records = [...read.records].sort((left, right) => (right.date ?? "").localeCompare(left.date ?? ""));
+    catalogCache = { at: Date.now(), records };
+    return { records };
+  } catch (error) {
+    if (catalogCache) return { records: catalogCache.records };
+    return { failure: failureKind(error) };
   }
-  const records = rows
-    .map(normalizeFsis)
-    .filter((row): row is FsisRecord => Boolean(row))
-    .sort((left, right) => (right.date ?? "").localeCompare(left.date ?? ""));
-  if (!records.length) return catalogCache?.records ?? null;
-  catalogCache = { at: Date.now(), records };
-  return records;
 }
 
 export async function searchFsis(input: SearchInput): Promise<FsisSection> {
   try {
     const catalog = await loadRecords();
-    if (!catalog) return emptyError();
-    const matched = catalog.filter((record) => fsisMatches(record, input));
+    if ("failure" in catalog) return emptyError(catalog.failure);
+    const matched = catalog.records.filter((record) => fsisMatches(record, input));
     const all = matched;
     const recalls = all.filter((record) => record.group !== "alert");
     const alerts = all.filter((record) => record.group === "alert");
@@ -147,6 +164,7 @@ export async function searchFsis(input: SearchInput): Promise<FsisSection> {
     const state = records.length || alertPage.length ? "ok" : "empty";
     return {
       state,
+      failure: null,
       detail: state === "empty" ? "The FSIS recall API returned no rows for this search." : "USDA FSIS recall and public health alert records.",
       retrievedAt: new Date().toISOString(),
       recallTotal: recalls.length,
@@ -154,15 +172,16 @@ export async function searchFsis(input: SearchInput): Promise<FsisSection> {
       records,
       alerts: alertPage,
     };
-  } catch {
-    return emptyError();
+  } catch (error) {
+    return emptyError(failureKind(error));
   }
 }
 
-function emptyError(): FsisSection {
+function emptyError(failure: SourceFailure): FsisSection {
   return {
     state: "error",
-    detail: FSIS_UNCHECKED,
+    failure,
+    detail: failureDetail("fsis", failure),
     retrievedAt: null,
     recallTotal: 0,
     alertTotal: 0,
@@ -173,23 +192,25 @@ function emptyError(): FsisSection {
 
 export async function recentFsis(): Promise<RecentReport["fsis"]> {
   try {
-    const records = await loadRecords();
-    if (!records?.length) {
-      return { state: "error", detail: FSIS_UNCHECKED, active: [], closed: [], alerts: [] };
+    const loaded = await loadRecords();
+    if ("failure" in loaded) {
+      return { state: "error", failure: loaded.failure, detail: failureDetail("fsis", loaded.failure), active: [], closed: [], alerts: [] };
     }
     return {
       state: "ok",
+      failure: null,
       detail: "Newest USDA FSIS records in the cached public list, sorted by the date FSIS published.",
-      active: records.filter((record) => record.group === "active").slice(0, 4),
-      closed: records.filter((record) => record.group === "closed").slice(0, 3),
-      alerts: records.filter((record) => record.group === "alert").slice(0, 3),
+      active: loaded.records.filter((record) => record.group === "active").slice(0, 4),
+      closed: loaded.records.filter((record) => record.group === "closed").slice(0, 3),
+      alerts: loaded.records.filter((record) => record.group === "alert").slice(0, 3),
     };
-  } catch {
-    return { state: "error", detail: FSIS_UNCHECKED, active: [], closed: [], alerts: [] };
+  } catch (error) {
+    const failure = failureKind(error);
+    return { state: "error", failure, detail: failureDetail("fsis", failure), active: [], closed: [], alerts: [] };
   }
 }
 
-export async function fsisByNumber(recallNumber: string): Promise<{ state: "ok" | "empty" | "error"; record: FsisRecord | null }> {
+export async function fsisByNumber(recallNumber: string): Promise<{ state: "ok" | "empty" | "error"; record: FsisRecord | null; failure: SourceFailure | null; detail: string | null }> {
   const section = await searchFsis({
     q: recallNumber,
     page: 1,
@@ -199,7 +220,7 @@ export async function fsisByNumber(recallNumber: string): Promise<{ state: "ok" 
     from: null,
     to: null,
   });
-  if (section.state === "error") return { state: "error", record: null };
+  if (section.state === "error") return { state: "error", record: null, failure: section.failure, detail: section.detail };
   const record = [...section.records, ...section.alerts].find((item) => item.recallNumber === recallNumber) ?? null;
-  return { state: record ? "ok" : "empty", record };
+  return { state: record ? "ok" : "empty", record, failure: null, detail: null };
 }

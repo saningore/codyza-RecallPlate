@@ -1,4 +1,5 @@
 export type SourceState = "ok" | "empty" | "error";
+export type SourceFailure = "timeout" | "unavailable" | "unreadable";
 
 export type StatusFilter = "all" | "ongoing" | "historical";
 export type ClassFilter = "all" | "I" | "II" | "III" | "unclassified";
@@ -80,6 +81,7 @@ export type Notice = {
 
 export type FdaSection = {
   state: SourceState;
+  failure: SourceFailure | null;
   detail: string;
   lastUpdated: string | null;
   total: number;
@@ -91,6 +93,7 @@ export type FdaSection = {
 
 export type FsisSection = {
   state: SourceState;
+  failure: SourceFailure | null;
   detail: string;
   retrievedAt: string | null;
   recallTotal: number;
@@ -101,6 +104,7 @@ export type FsisSection = {
 
 export type NoticeSection = {
   state: SourceState;
+  failure: SourceFailure | null;
   detail: string;
   retrievedAt: string | null;
   total: number;
@@ -133,6 +137,7 @@ export type RecentReport = {
   retrievedAt: string;
   fda: {
     state: SourceState;
+    failure: SourceFailure | null;
     detail: string;
     lastUpdated: string | null;
     ongoing: FdaRecord[];
@@ -140,6 +145,7 @@ export type RecentReport = {
   };
   fsis: {
     state: SourceState;
+    failure: SourceFailure | null;
     detail: string;
     active: FsisRecord[];
     closed: FsisRecord[];

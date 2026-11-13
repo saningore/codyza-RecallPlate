@@ -73,6 +73,30 @@ article dd {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+.source-fallback {
+  border: 1px solid #c4a15a;
+  border-radius: 1rem;
+  background: #f8efd8;
+  padding: 1rem 1.1rem;
+}
+
+.results-target:focus {
+  outline: 2px solid var(--color-pine);
+  outline-offset: 4px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @keyframes pulse {
   50% { opacity: 0.55; }
 }

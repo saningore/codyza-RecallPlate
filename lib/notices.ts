@@ -1,8 +1,8 @@
-import { FDA_NOTICES, NOTICE_UNCHECKED, PAGE_SIZE } from "@/lib/copy";
+import { FDA_NOTICES, PAGE_SIZE, failureDetail } from "@/lib/copy";
 import { remember } from "@/lib/cache";
 import { fetchUpstream } from "@/lib/http";
-import type { Notice, NoticeSection, SearchInput } from "@/lib/types";
-import { calendarDate, validDate, withinDates } from "@/lib/text";
+import type { Notice, NoticeSection, SearchInput, SourceFailure } from "@/lib/types";
+import { calendarDate, failureKind, validDate, withinDates } from "@/lib/text";
 
 function decodeXml(value: string): string {
   let text = value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]+>/g, " ");
@@ -55,6 +55,15 @@ function publishedDate(value: string): string | null {
   return calendarDate(value);
 }
 
+export function interpretRss(xml: string): Notice[] | null {
+  if (typeof xml !== "string" || !/<rss\b|<feed\b|<item\b/i.test(xml)) return null;
+  const notices = parseRss(xml);
+  const items = xml.match(/<item\b/gi)?.length ?? 0;
+  if (items === 0 && /<entry\b/i.test(xml)) return null;
+  if (items > 0 && notices.length === 0 && !/<link\b/i.test(xml)) return null;
+  return notices;
+}
+
 export function parseRss(xml: string): Notice[] {
   return xml.split(/<item\b/i).slice(1).flatMap((chunk) => {
     const title = decodeXml(tag(chunk, "title"));
@@ -81,26 +90,33 @@ export function noticeMatches(notice: Notice, input: Pick<SearchInput, "q" | "se
   return haystack.includes(term);
 }
 
+function noticeMiss(failure: SourceFailure): NoticeSection {
+  return { state: "error", failure, detail: failureDetail("notice", failure), retrievedAt: null, total: 0, records: [] };
+}
+
 export async function searchNotices(input: SearchInput): Promise<NoticeSection> {
   try {
     const cached = await remember("fda-notices", 10 * 60_000, async () => {
       const response = await fetchUpstream(FDA_NOTICES, 12_000);
-      if (response.status !== 200) return null;
-      return parseRss(response.bodyText);
+      if (response.status !== 200) throw new Error("unavailable");
+      const notices = interpretRss(response.bodyText);
+      if (!notices) throw new Error("unreadable");
+      return notices;
     });
-    if (!cached) {
-      return { state: "error", detail: NOTICE_UNCHECKED, retrievedAt: null, total: 0, records: [] };
-    }
+    if (!cached) return noticeMiss("unavailable");
     const matched = cached.filter((notice) => noticeMatches(notice, input));
     const start = ((input.noticePage ?? input.page) - 1) * PAGE_SIZE;
     return {
       state: matched.length ? "ok" : "empty",
+      failure: null,
       detail: matched.length ? "FDA food safety recall notices." : "The FDA notice feed had no matching item.",
       retrievedAt: new Date().toISOString(),
       total: matched.length,
       records: matched.slice(start, start + PAGE_SIZE),
     };
-  } catch {
-    return { state: "error", detail: NOTICE_UNCHECKED, retrievedAt: null, total: 0, records: [] };
+  } catch (error) {
+    if (error instanceof Error && error.message === "unreadable") return noticeMiss("unreadable");
+    if (error instanceof Error && error.message === "unavailable") return noticeMiss("unavailable");
+    return noticeMiss(failureKind(error));
   }
 }

@@ -119,6 +119,31 @@ export function resultMessage(input: {
   return null;
 }
 
+export function finiteTotal(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return Math.floor(value);
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) return Number(value.trim());
+  return null;
+}
+
+export function failureKind(error: unknown): "timeout" | "unavailable" {
+  return error instanceof Error && error.message === "timeout" ? "timeout" : "unavailable";
+}
+
+export function searchAnnouncement(report: {
+  query: string;
+  message: string | null;
+  fda: { state: "ok" | "empty" | "error"; detail: string; total: number };
+  fsis: { state: "ok" | "empty" | "error"; detail: string; recallTotal: number };
+  notices: { state: "ok" | "empty" | "error"; detail: string };
+}): string {
+  const failed = [report.fda, report.fsis, report.notices].filter((section) => section.state === "error").map((section) => section.detail);
+  if (report.message) return [report.message, ...failed].join(" ");
+  const parts = [`Results for ${report.query}.`];
+  if (report.fda.state === "ok") parts.push(`${report.fda.total} FDA enforcement records.`);
+  if (report.fsis.state === "ok") parts.push(`${report.fsis.recallTotal} USDA recalls.`);
+  return [...parts, ...failed].join(" ");
+}
+
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",

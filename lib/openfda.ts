@@ -1,8 +1,8 @@
-import { FDA_ENFORCEMENT, FDA_UNCHECKED, PAGE_SIZE } from "@/lib/copy";
+import { FDA_ENFORCEMENT, PAGE_SIZE, failureDetail } from "@/lib/copy";
 import { fetchUpstream } from "@/lib/http";
 import { buildFdaQuery, pageWindow } from "@/lib/query";
-import type { FdaRecord, FdaSection, RecentReport, SearchInput } from "@/lib/types";
-import { calendarDate, clean, fdaGroup, suggestToken } from "@/lib/text";
+import type { FdaRecord, FdaSection, RecentReport, SearchInput, SourceFailure } from "@/lib/types";
+import { calendarDate, clean, failureKind, fdaGroup, finiteTotal, plain, suggestToken } from "@/lib/text";
 
 type FdaPayload = {
   meta?: {
@@ -23,7 +23,7 @@ function readJson(bodyText: string): FdaPayload | null {
 }
 
 export function normalizeFda(value: unknown): FdaRecord | null {
-  if (!value || typeof value !== "object") return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
   const status = clean(row.status);
   return {
@@ -33,27 +33,65 @@ export function normalizeFda(value: unknown): FdaRecord | null {
     status,
     classification: clean(row.classification),
     group: fdaGroup(status),
-    productDescription: clean(row.product_description),
-    reason: clean(row.reason_for_recall),
-    firm: clean(row.recalling_firm),
-    address1: clean(row.address_1),
-    address2: clean(row.address_2),
-    city: clean(row.city),
-    state: clean(row.state),
-    postalCode: clean(row.postal_code),
-    country: clean(row.country),
-    distribution: clean(row.distribution_pattern),
-    quantity: clean(row.product_quantity),
-    codeInfo: clean(row.code_info),
-    moreCodeInfo: clean(row.more_code_info),
+    productDescription: plain(row.product_description),
+    reason: plain(row.reason_for_recall),
+    firm: plain(row.recalling_firm),
+    address1: plain(row.address_1),
+    address2: plain(row.address_2),
+    city: plain(row.city),
+    state: plain(row.state),
+    postalCode: plain(row.postal_code),
+    country: plain(row.country),
+    distribution: plain(row.distribution_pattern),
+    quantity: plain(row.product_quantity),
+    codeInfo: plain(row.code_info),
+    moreCodeInfo: plain(row.more_code_info),
     initiationDate: calendarDate(row.recall_initiation_date),
     classificationDate: calendarDate(row.center_classification_date),
     reportDate: calendarDate(row.report_date),
     terminationDate: calendarDate(row.termination_date),
-    voluntaryMandated: clean(row.voluntary_mandated),
-    notification: clean(row.initial_firm_notification),
+    voluntaryMandated: plain(row.voluntary_mandated),
+    notification: plain(row.initial_firm_notification),
     productType: clean(row.product_type),
   };
+}
+
+export function fdaReadable(record: FdaRecord): boolean {
+  return Boolean(record.recallNumber || record.productDescription || record.firm || record.reason);
+}
+
+export type FdaRead =
+  | { outcome: "empty"; lastUpdated: string | null }
+  | { outcome: "unavailable" }
+  | { outcome: "unreadable" }
+  | { outcome: "rows"; records: FdaRecord[]; dropped: number; total: number; lastUpdated: string | null };
+
+export function interpretFdaPayload(status: number, payload: unknown): FdaRead {
+  const lastUpdated = lastUpdatedFrom(payload);
+  if (status === 404) return { outcome: "empty", lastUpdated };
+  if (status !== 200) return { outcome: "unavailable" };
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return { outcome: "unreadable" };
+  const body = payload as FdaPayload;
+  if (!Array.isArray(body.results)) return { outcome: "unreadable" };
+  const records = body.results
+    .map(normalizeFda)
+    .filter((row): row is FdaRecord => Boolean(row && fdaReadable(row)));
+  if (body.results.length > 0 && records.length === 0) return { outcome: "unreadable" };
+  if (!records.length) return { outcome: "empty", lastUpdated };
+  const reported = finiteTotal(body.meta?.results?.total);
+  return {
+    outcome: "rows",
+    records,
+    dropped: body.results.length - records.length,
+    total: reported != null && reported >= records.length ? reported : records.length,
+    lastUpdated,
+  };
+}
+
+function lastUpdatedFrom(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const meta = (payload as FdaPayload).meta;
+  return calendarDate(meta?.last_updated) ?? clean(meta?.last_updated);
 }
 
 function endpoint(search: string, limit: number, skip: number, count: string | null): string {
@@ -91,8 +129,8 @@ function totals(payload: FdaPayload | null): { ongoing: number | null; historica
   for (const item of payload.results) {
     if (!item || typeof item !== "object") continue;
     const term = clean((item as { term?: unknown }).term);
-    const count = (item as { count?: unknown }).count;
-    if (typeof count !== "number") continue;
+    const count = finiteTotal((item as { count?: unknown }).count);
+    if (count == null) continue;
     if (term === "Ongoing") ongoing = count;
     if (term === "Completed" || term === "Terminated") {
       historical += count;
@@ -102,31 +140,37 @@ function totals(payload: FdaPayload | null): { ongoing: number | null; historica
   return { ongoing, historical: sawHistorical ? historical : null };
 }
 
+function fdaMiss(failure: SourceFailure | null, detail: string): FdaSection {
+  return {
+    state: "error",
+    failure,
+    detail,
+    lastUpdated: null,
+    total: 0,
+    ongoingTotal: null,
+    historicalTotal: null,
+    records: [],
+    truncated: false,
+  };
+}
+
 export async function searchFda(input: SearchInput): Promise<FdaSection> {
   const window = pageWindow(input.fdaPage ?? input.page);
-  if (window.error) {
-    return {
-      state: "error",
-      detail: window.error,
-      lastUpdated: null,
-      total: 0,
-      ongoingTotal: null,
-      historicalTotal: null,
-      records: [],
-      truncated: false,
-    };
-  }
+  if (window.error) return fdaMiss(null, window.error);
   const search = buildFdaQuery(input);
   try {
     const [page, count] = await Promise.all([
       readFda(search, PAGE_SIZE, window.skip, null),
       input.status === "all" ? readFda(search, PAGE_SIZE, 0, "status.exact") : Promise.resolve(null),
     ]);
-    if (page.status === 404) {
+    const read = interpretFdaPayload(page.status, page.payload);
+    if (read.outcome === "unavailable" || read.outcome === "unreadable") return fdaMiss(read.outcome, failureDetail("fda", read.outcome));
+    if (read.outcome === "empty") {
       return {
         state: "empty",
+        failure: null,
         detail: "The FDA enforcement catalog returned no rows for this search.",
-        lastUpdated: calendarDate(page.payload?.meta?.last_updated) ?? clean(page.payload?.meta?.last_updated),
+        lastUpdated: read.lastUpdated,
         total: 0,
         ongoingTotal: 0,
         historicalTotal: 0,
@@ -134,45 +178,22 @@ export async function searchFda(input: SearchInput): Promise<FdaSection> {
         truncated: false,
       };
     }
-    if (page.status !== 200 || !page.payload) {
-      return {
-        state: "error",
-        detail: FDA_UNCHECKED,
-        lastUpdated: null,
-        total: 0,
-        ongoingTotal: null,
-        historicalTotal: null,
-        records: [],
-        truncated: false,
-      };
-    }
-    const rawRows = Array.isArray(page.payload.results) ? page.payload.results : [];
-    const records = rawRows.map(normalizeFda).filter((row): row is FdaRecord => Boolean(row));
-    const unread = rawRows.length - records.length;
-    const total = page.payload.meta?.results?.total ?? records.length;
     const split = count ? totals(count.payload) : { ongoing: null, historical: null };
-    const detail = unread > 0 ? `${unread} rows on this page could not be read and were left out.` : "FDA food enforcement records.";
+    const detail = read.dropped > 0 ? `${read.dropped} rows on this page could not be read and were left out.` : "FDA food enforcement records.";
     return {
-      state: records.length ? "ok" : "empty",
+      state: "ok",
+      failure: null,
       detail,
-      lastUpdated: calendarDate(page.payload.meta?.last_updated) ?? clean(page.payload.meta?.last_updated),
-      total,
+      lastUpdated: read.lastUpdated,
+      total: read.total,
       ongoingTotal: split.ongoing,
       historicalTotal: split.historical,
-      records,
-      truncated: total > 25_000,
+      records: read.records,
+      truncated: read.total > 25_000,
     };
-  } catch {
-    return {
-      state: "error",
-      detail: FDA_UNCHECKED,
-      lastUpdated: null,
-      total: 0,
-      ongoingTotal: null,
-      historicalTotal: null,
-      records: [],
-      truncated: false,
-    };
+  } catch (error) {
+    const failure = failureKind(error);
+    return fdaMiss(failure, failureDetail("fda", failure));
   }
 }
 
@@ -185,7 +206,7 @@ export async function recentFda(): Promise<RecentReport["fda"]> {
     const ongoing = rowsFromFda(ongoingRaw.status, ongoingRaw.payload);
     const historical = rowsFromFda(historicalRaw.status, historicalRaw.payload);
     if (!ongoing.ok && !historical.ok) {
-      return { state: "error", detail: FDA_UNCHECKED, lastUpdated: null, ongoing: [], historical: [] };
+      return { state: "error", failure: ongoing.failure, detail: failureDetail("fda", ongoing.failure), lastUpdated: null, ongoing: [], historical: [] };
     }
     const ongoingRecords = ongoing.ok ? ongoing.records : [];
     const historicalRecords = historical.ok ? historical.records : [];
@@ -197,23 +218,28 @@ export async function recentFda(): Promise<RecentReport["fda"]> {
         : "Recently published FDA food enforcement records.";
     return {
       state,
+      failure: null,
       detail,
       lastUpdated: ongoing.lastUpdated ?? historical.lastUpdated,
       ongoing: ongoingRecords,
       historical: historicalRecords,
     };
-  } catch {
-    return { state: "error", detail: FDA_UNCHECKED, lastUpdated: null, ongoing: [], historical: [] };
+  } catch (error) {
+    const failure = failureKind(error);
+    return { state: "error", failure, detail: failureDetail("fda", failure), lastUpdated: null, ongoing: [], historical: [] };
   }
 }
 
-function rowsFromFda(status: number, payload: FdaPayload | null): { ok: boolean; records: FdaRecord[]; lastUpdated: string | null } {
-  if (status === 404) return { ok: true, records: [], lastUpdated: null };
-  if (status !== 200 || !payload) return { ok: false, records: [], lastUpdated: null };
+function rowsFromFda(status: number, payload: FdaPayload | null): { ok: boolean; failure: SourceFailure; records: FdaRecord[]; lastUpdated: string | null } {
+  const read = interpretFdaPayload(status, payload);
+  if (read.outcome === "unavailable" || read.outcome === "unreadable") {
+    return { ok: false, failure: read.outcome, records: [], lastUpdated: null };
+  }
   return {
     ok: true,
-    records: (payload.results ?? []).map(normalizeFda).filter((row): row is FdaRecord => Boolean(row)),
-    lastUpdated: calendarDate(payload.meta?.last_updated) ?? clean(payload.meta?.last_updated),
+    failure: "unavailable",
+    records: read.outcome === "rows" ? read.records : [],
+    lastUpdated: read.lastUpdated,
   };
 }
 
@@ -224,7 +250,7 @@ export async function suggestFdaTerm(query: string): Promise<string | null> {
     const response = await readFda(`product_description:${term}~1`, 5, 0, null);
     if (response.status !== 200 || !Array.isArray(response.payload?.results)) return null;
     const descriptions = response.payload.results
-      .map((row) => (row && typeof row === "object" ? clean((row as { product_description?: unknown }).product_description) : null))
+      .map((row) => (row && typeof row === "object" && !Array.isArray(row) ? plain((row as { product_description?: unknown }).product_description) : null))
       .filter((row): row is string => Boolean(row));
     return suggestToken(term, descriptions);
   } catch {
@@ -232,33 +258,33 @@ export async function suggestFdaTerm(query: string): Promise<string | null> {
   }
 }
 
-export async function fdaByNumber(recallNumber: string): Promise<{ state: "ok" | "empty" | "error"; records: FdaRecord[]; lastUpdated: string | null }> {
+export async function fdaByNumber(recallNumber: string): Promise<{ state: "ok" | "empty" | "error"; records: FdaRecord[]; lastUpdated: string | null; failure: SourceFailure | null; detail: string | null }> {
   try {
     const response = await readFda(`recall_number:"${recallNumber}"`, 5, 0, null);
-    if (response.status === 404) return { state: "empty", records: [], lastUpdated: null };
-    if (response.status !== 200 || !response.payload) return { state: "error", records: [], lastUpdated: null };
-    const records = (response.payload.results ?? []).map(normalizeFda).filter((row): row is FdaRecord => Boolean(row));
-    return {
-      state: records.length ? "ok" : "empty",
-      records,
-      lastUpdated: calendarDate(response.payload.meta?.last_updated) ?? clean(response.payload.meta?.last_updated),
-    };
-  } catch {
-    return { state: "error", records: [], lastUpdated: null };
+    const read = interpretFdaPayload(response.status, response.payload);
+    if (read.outcome === "unavailable" || read.outcome === "unreadable") {
+      return { state: "error", records: [], lastUpdated: null, failure: read.outcome, detail: failureDetail("fda", read.outcome) };
+    }
+    if (read.outcome === "empty") return { state: "empty", records: [], lastUpdated: read.lastUpdated, failure: null, detail: null };
+    return { state: "ok", records: read.records, lastUpdated: read.lastUpdated, failure: null, detail: null };
+  } catch (error) {
+    const failure = failureKind(error);
+    return { state: "error", records: [], lastUpdated: null, failure, detail: failureDetail("fda", failure) };
   }
 }
 
-export async function fdaByEvent(eventId: string, currentNumbers: string[]): Promise<{ state: "ok" | "empty" | "error"; records: FdaRecord[] }> {
+export async function fdaByEvent(eventId: string, currentNumbers: string[]): Promise<{ state: "ok" | "empty" | "error"; records: FdaRecord[]; failure: SourceFailure | null; detail: string | null }> {
   try {
     const response = await readFda(`event_id:"${eventId}"`, 25, 0, null);
-    if (response.status === 404) return { state: "empty", records: [] };
-    if (response.status !== 200 || !response.payload) return { state: "error", records: [] };
+    const read = interpretFdaPayload(response.status, response.payload);
+    if (read.outcome === "unavailable" || read.outcome === "unreadable") {
+      return { state: "error", records: [], failure: read.outcome, detail: failureDetail("fda", read.outcome) };
+    }
     const skip = new Set(currentNumbers);
-    const records = (response.payload.results ?? [])
-      .map(normalizeFda)
-      .filter((row): row is FdaRecord => Boolean(row && row.recallNumber && !skip.has(row.recallNumber)));
-    return { state: records.length ? "ok" : "empty", records };
-  } catch {
-    return { state: "error", records: [] };
+    const records = (read.outcome === "rows" ? read.records : []).filter((row) => row.recallNumber && !skip.has(row.recallNumber));
+    return { state: records.length ? "ok" : "empty", records, failure: null, detail: null };
+  } catch (error) {
+    const failure = failureKind(error);
+    return { state: "error", records: [], failure, detail: failureDetail("fda", failure) };
   }
 }

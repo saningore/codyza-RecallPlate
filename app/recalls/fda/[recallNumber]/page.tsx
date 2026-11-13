@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import FactList from "@/components/FactList";
 import PrintButton from "@/components/PrintButton";
+import SourceFallback from "@/components/SourceFallback";
 import StatusMark from "@/components/StatusMark";
-import { COMPARE_NOTE, ENFORCEMENT_ABOUT, EXTRACT_NOTE, FDA_UNCHECKED, OPENFDA_ABOUT } from "@/lib/copy";
+import { COMPARE_NOTE, ENFORCEMENT_ABOUT, EXTRACT_NOTE, OPENFDA_ABOUT, failureDetail, failureTitle } from "@/lib/copy";
 import { fdaFacts } from "@/lib/facts";
 import { fdaByEvent, fdaByNumber } from "@/lib/openfda";
 import { isFdaNumber } from "@/lib/query";
@@ -35,10 +36,10 @@ export default async function FdaRecallPage({
   const found = await fdaByNumber(recallNumber);
   const retrievedAt = new Date().toISOString();
   if (found.state === "error") {
+    const failure = found.failure ?? "unavailable";
     return (
       <article className="mx-auto max-w-3xl px-4 py-12">
-        <h1 className="font-serif text-4xl font-semibold">The FDA enforcement catalog could not be checked</h1>
-        <p className="mt-3">{FDA_UNCHECKED}</p>
+        <SourceFallback heading="h1" title={failureTitle("fda", failure)} detail={found.detail ?? failureDetail("fda", failure)} />
         <Link className="mt-6 inline-flex min-h-11 items-center font-bold text-sea underline" href={back}>Back to search</Link>
       </article>
     );
@@ -54,7 +55,9 @@ export default async function FdaRecallPage({
     );
   }
   const eventId = found.records.find((record) => record.eventId)?.eventId ?? null;
-  const siblings = eventId ? await fdaByEvent(eventId, found.records.flatMap((record) => record.recallNumber ? [record.recallNumber] : [])) : { state: "empty" as const, records: [] };
+  const siblings = eventId
+    ? await fdaByEvent(eventId, found.records.flatMap((record) => record.recallNumber ? [record.recallNumber] : []))
+    : { state: "empty" as const, records: [], failure: null, detail: null };
   return (
     <article className="mx-auto max-w-3xl px-4 py-10">
       <p className="text-xs font-bold uppercase tracking-wide text-sea">FDA enforcement record</p>
@@ -81,7 +84,7 @@ export default async function FdaRecallPage({
       </div>
       <section className="mt-10">
         <h2 className="font-serif text-2xl font-semibold">Other products in this FDA event</h2>
-        {siblings.state === "error" ? <p className="mt-2">Other products in this event could not be checked.</p> : null}
+        {siblings.state === "error" ? <div className="mt-3"><SourceFallback heading="h3" title={failureTitle("fda", siblings.failure ?? "unavailable")} detail={siblings.detail ?? failureDetail("fda", siblings.failure ?? "unavailable")} /></div> : null}
         {siblings.state === "empty" ? <p className="mt-2">No other product row was returned for this event.</p> : null}
         <ul className="mt-3 space-y-2">
           {siblings.records.map((record) => record.recallNumber ? (

@@ -49,6 +49,14 @@ export function readSession(key: string): SearchReport | null {
   }
 }
 
+export function clearSession(): void {
+  try {
+    window.sessionStorage.removeItem(SESSION);
+  } catch {
+    // The next search still contacts FDA and USDA.
+  }
+}
+
 export function writeSession(key: string, body: SearchReport): void {
   try {
     const cached: Cached = { at: Date.now(), key, body };

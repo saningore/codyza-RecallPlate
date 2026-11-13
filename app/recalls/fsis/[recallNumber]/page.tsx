@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import FactList from "@/components/FactList";
 import PrintButton from "@/components/PrintButton";
+import SourceFallback from "@/components/SourceFallback";
 import StatusMark from "@/components/StatusMark";
-import { COMPARE_NOTE, FSIS_HOME, FSIS_UNCHECKED, PHA_NOTE } from "@/lib/copy";
+import { COMPARE_NOTE, FSIS_HOME, PHA_NOTE, failureDetail, failureTitle } from "@/lib/copy";
 import { fsisFacts } from "@/lib/facts";
 import { fsisByNumber } from "@/lib/fsis";
 import { isFsisNumber } from "@/lib/query";
@@ -34,12 +35,13 @@ export default async function FsisRecallPage({
   }
   const found = await fsisByNumber(recallNumber);
   if (found.state === "error") {
+    const failure = found.failure ?? "unavailable";
     return (
       <article className="mx-auto max-w-3xl px-4 py-12">
-        <h1 className="font-serif text-4xl font-semibold">USDA FSIS could not be checked</h1>
-        <p className="mt-3">{FSIS_UNCHECKED}</p>
-        <a className="mt-4 inline-flex font-bold text-sea underline" href={FSIS_HOME}>FSIS recalls and public health alerts</a>
-        <Link className="mt-6 block font-bold text-sea underline" href={back}>Back to search</Link>
+        <SourceFallback heading="h1" title={failureTitle("fsis", failure)} detail={found.detail ?? failureDetail("fsis", failure)}>
+          <a className="inline-flex min-h-11 items-center font-bold text-sea underline" href={FSIS_HOME}>FSIS recalls and public health alerts</a>
+        </SourceFallback>
+        <Link className="mt-6 inline-flex min-h-11 items-center font-bold text-sea underline" href={back}>Back to search</Link>
       </article>
     );
   }

@@ -23,8 +23,8 @@ export function FdaCard({ record, query }: { record: FdaRecord; query: string })
       </dl>
       <p className="mt-3 line-clamp-4 break-words">{show(record.reason)}</p>
       <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
-        {href ? <Link className="inline-flex min-h-11 items-center font-bold text-sea underline" href={href}>Full record</Link> : null}
-        {record.recallNumber ? <a className="inline-flex min-h-11 items-center font-bold text-sea underline" href={officialFdaUrl(record.recallNumber)} target="_blank" rel="noopener noreferrer">openFDA record</a> : null}
+        {href ? <Link className="inline-flex min-h-11 items-center font-bold text-sea underline" href={href} aria-label={`Full FDA record for ${record.recallNumber ?? record.productDescription ?? "this product"}`}>Full record</Link> : null}
+        {record.recallNumber ? <a className="inline-flex min-h-11 items-center font-bold text-sea underline" href={officialFdaUrl(record.recallNumber)} target="_blank" rel="noopener noreferrer" aria-label={`openFDA record for ${record.recallNumber}, opens in a new tab`}>openFDA record</a> : null}
       </div>
     </article>
   );
@@ -49,8 +49,8 @@ export function FsisCard({ record, query }: { record: FsisRecord; query: string 
       {record.products ? <p className="mt-3 line-clamp-3 break-words">{record.products}</p> : null}
       <p className="mt-3 line-clamp-4 break-words">{show(record.reason)}</p>
       <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2">
-        {href ? <Link className="inline-flex min-h-11 items-center font-bold text-sea underline" href={href}>Full record</Link> : null}
-        {record.url ? <a className="inline-flex min-h-11 items-center font-bold text-sea underline" href={record.url} target="_blank" rel="noopener noreferrer">FSIS notice</a> : null}
+        {href ? <Link className="inline-flex min-h-11 items-center font-bold text-sea underline" href={href} aria-label={`Full USDA record for ${record.recallNumber ?? record.title ?? "this product"}`}>Full record</Link> : null}
+        {record.url ? <a className="inline-flex min-h-11 items-center font-bold text-sea underline" href={record.url} target="_blank" rel="noopener noreferrer" aria-label={`FSIS notice for ${record.recallNumber ?? "this record"}, opens in a new tab`}>FSIS notice</a> : null}
       </div>
     </article>
   );
